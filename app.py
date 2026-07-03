@@ -388,9 +388,8 @@ tr.tot-row td{background:#f2f4f8;font-weight:700;border-top:1px solid var(--line
 <div class="kpis" id="kpis"></div>
 
 <section>
-  <div class="shead"><span class="n">01</span><h2>Site conversion trend</h2><span class="h">week-on-week · with MoW % change</span></div>
-  <div class="card tscroll" style="margin-bottom:14px"><div class="subhead" id="trend-head">Site × week conversion %</div><table id="site-trend"></table></div>
-  <div class="card tscroll"><div class="subhead">Month × site conversion %</div><table id="month-trend"></table></div>
+  <div class="shead"><span class="n">01</span><h2>Month × site conversion %</h2><span class="h">all months · then last 8 weeks · with MoM % change</span></div>
+  <div class="card tscroll"><table id="month-trend"></table></div>
 </section>
 
 <section>
@@ -403,30 +402,27 @@ tr.tot-row td{background:#f2f4f8;font-weight:700;border-top:1px solid var(--line
 </section>
 
 <section>
-  <div class="shead"><span class="n">03</span><h2>Vertical breakdown</h2><span class="h">Apparel vs Footwear · site × vertical conversion</span></div>
+  <div class="shead"><span class="n">03</span><h2>Vertical breakdown</h2><span class="h">Apparel vs Footwear · last 8 weeks · site × vertical conversion</span></div>
   <div class="split">
-    <div class="card tscroll"><div class="subhead">Site × vertical conversion %</div><table id="vert-table"></table></div>
-    <div class="card tscroll">
-      <div class="subhead" id="reason-head">Failure reasons · in scope</div><table id="reason-table"></table>
-      <div class="subhead" style="margin-top:8px">Vertical failure split</div><table id="vert-fail-table"></table>
+    <div class="card tscroll"><div class="subhead">Site × vertical — last 8 weeks</div><table id="vert-table"></table></div>
+    <div class="card" style="min-width:0;overflow:hidden">
+      <div class="subhead" id="reason-head">Failure reasons · last 8 weeks</div>
+      <div style="overflow-x:hidden"><table id="reason-table" style="table-layout:fixed;width:100%"></table></div>
+      <div class="subhead" style="margin-top:8px">Vertical failure split</div>
+      <div style="overflow-x:hidden"><table id="vert-fail-table" style="table-layout:fixed;width:100%"></table></div>
     </div>
   </div>
+  <div style="margin-top:14px"><div class="finds" id="site-finds"></div></div>
 </section>
 
 <section>
   <div class="shead"><span class="n">04</span><h2>RF task × site failure heat map</h2><span class="h">which refinishing task drives most failures · per site</span></div>
   <div class="card tscroll"><table id="task-heat"></table></div>
-  <div class="note">Cell shading intensity = failure count (darker = more failures). Click a site column to highlight.</div>
+  <div class="note">Cell shading intensity = failure count (darker = more failures).</div>
 </section>
 
 <section>
-  <div class="shead"><span class="n">05</span><h2>Site-wise findings</h2><span class="h">per site — worst week · top failure reason · apparel vs footwear gap</span></div>
-  <div class="card tscroll" style="margin-bottom:14px"><div class="tscroll"><table id="site-table"></table></div></div>
-  <div class="finds" id="site-finds"></div>
-</section>
-
-<section>
-  <div class="shead"><span class="n">06</span><h2>Week-wise failure drill</h2><span class="h">select a week · stat row + reason breakdown</span></div>
+  <div class="shead"><span class="n">05</span><h2>Week-wise failure drill</h2><span class="h">select a week · stat row + reason breakdown</span></div>
   <div class="card">
     <div class="controls"><span class="muted">Select week</span><select id="drill-wk"></select><span class="note" style="padding:0" id="drill-note"></span></div>
     <div class="statrow" id="drill-stats"></div>
@@ -544,71 +540,66 @@ function render(){
   document.getElementById('kpis').innerHTML=K.map(k=>
     `<div class="kpi ${k.cls}"><div class="k">${k.k}</div><div class="v num">${k.v}</div><div class="d">${k.d}</div></div>`).join('');
 
-  drawSiteTrend(sites,weeks,verts);
   drawMonthTrend(sites,verts);
   drawZoneTrend(sites,weeks,verts);
   drawZoneFinds(sites,weeks,verts);
-  drawVertTable(sites,weeks);
-  drawReasonTable(sites,weeks,verts);
-  drawVertFailTable(sites,weeks);
+  const last8=D.weeks.slice(-8);
+  drawVertTable(sites,last8);
+  drawReasonTable(sites,last8,verts);
+  drawVertFailTable(sites,last8);
   drawTaskHeat(sites,weeks);
-  drawSiteTable(sites,weeks,verts);
   drawSiteFinds(sites,weeks,verts);
   drawDrill();
 }
 
-function drawSiteTrend(sites,weeks,verts){
-  document.getElementById('trend-head').innerHTML=`Site × week conversion % · <b>${weeks.length}</b> weeks in view`;
-  let h='<thead><tr><th>Site</th><th>Zone</th>';
-  weeks.forEach(w=>{h+=`<th>Wk ${w}<br><span style="font-size:9px;font-weight:400">${(D.wk2m[w]||'').replace(' 26','')}</span></th>`;});
-  if(weeks.length>1)h+='<th>MoW %</th>';
-  h+='<th>Overall</th></tr></thead><tbody>';
-  sites.forEach(s=>{
-    const z=D.zone_of[s]||'';
-    const wkVals=weeks.map(w=>{const rows=getBase([s],[w],verts);const o=aggPFC(rows);return o.c;});
-    const ov2=aggPFC(getBase([s],weeks,verts));
-    h+=`<tr class="zband ${z}"><td>${s}</td><td class="muted">${z}</td>`;
-    wkVals.forEach(c=>{h+=`<td>${fmt(c)}</td>`;});
-    if(weeks.length>1){
-      const a=wkVals[wkVals.length-2],b=wkVals[wkVals.length-1];
-      h+=`<td>${delta(a,b)}</td>`;
-    }
-    h+=`<td>${fmt(ov2.c)}</td></tr>`;
-  });
-  // Pan India row
-  h+='<tr class="tot-row"><td>Pan India</td><td class="muted">All</td>';
-  weeks.forEach(w=>{const rows=getBase(sites,[w],verts);const o=aggPFC(rows);h+=`<td>${fmt(o.c)}</td>`;});
-  if(weeks.length>1){
-    const a=aggPFC(getBase(sites,[weeks[weeks.length-2]],verts)).c;
-    const b=aggPFC(getBase(sites,[weeks[weeks.length-1]],verts)).c;
-    h+=`<td>${delta(a,b)}</td>`;
-  }
-  const ov2=aggPFC(getBase(sites,weeks,verts));
-  h+=`<td>${fmt(ov2.c)}</td></tr>`;
-  h+='</tbody>';
-  document.getElementById('site-trend').innerHTML=h;
-}
-
 function drawMonthTrend(sites,verts){
   const months=D.months;
-  let h='<thead><tr><th>Site</th><th>Zone</th>';
-  months.forEach(m=>{h+=`<th>${m}</th>`;});
-  if(months.length>1)h+='<th>MoM %</th>';
-  h+='<th>Overall</th></tr></thead><tbody>';
+  const last8=D.weeks.slice(-8);
+  // build header: Site | Zone | [months] | [SEP] | [last 8 wks] | MoM% | Overall
+  let h='<thead><tr><th class="lft">Site</th><th class="lft">Zone</th>';
+  months.forEach((m,i)=>{
+    const isLast=i===months.length-1;
+    h+=`<th style="${isLast?'border-right:3px solid var(--line);':''}">${m}</th>`;
+  });
+  last8.forEach(w=>{
+    h+=`<th style="background:#f8f9fd;font-size:10px">Wk${w}<br><span style="font-size:9px;font-weight:400;color:var(--faint)">${(D.wk2m[w]||'').replace(' 26','')}</span></th>`;
+  });
+  h+='<th>MoM%</th><th>Overall</th></tr></thead><tbody>';
+
   sites.forEach(s=>{
     const z=D.zone_of[s]||'';
-    const mVals=months.map(m=>{const wks=D.weeks.filter(w=>D.wk2m[w]===m);return aggPFC(getBase([s],wks,verts)).c;});
+    const mVals=months.map((m,i)=>{
+      const wks=D.weeks.filter(w=>D.wk2m[w]===m);
+      return aggPFC(getBase([s],wks,verts)).c;
+    });
+    const wkVals=last8.map(w=>aggPFC(getBase([s],[w],verts)).c);
     const ov2=aggPFC(getBase([s],D.weeks,verts));
-    h+=`<tr class="zband ${z}"><td>${s}</td><td class="muted">${z}</td>`;
-    mVals.forEach(c=>{h+=`<td>${fmt(c)}</td>`;});
-    if(months.length>1){const a=mVals[mVals.length-2],b=mVals[mVals.length-1];h+=`<td>${delta(a,b)}</td>`;}
-    h+=`<td>${fmt(ov2.c)}</td></tr>`;
+    const momA=mVals[mVals.length-2],momB=mVals[mVals.length-1];
+    h+=`<tr class="zband ${z}"><td class="lft">${s}</td><td class="lft muted" style="font-size:11px">${z}</td>`;
+    mVals.forEach((c,i)=>{
+      const isLast=i===mVals.length-1;
+      h+=`<td style="${isLast?'border-right:3px solid var(--line);':''}">${fmt(c)}</td>`;
+    });
+    wkVals.forEach(c=>{h+=`<td style="background:#fafbfd">${fmt(c)}</td>`;});
+    h+=`<td>${delta(momA,momB)}</td><td>${fmt(ov2.c)}</td></tr>`;
   });
-  h+='<tr class="tot-row"><td>Pan India</td><td class="muted">All</td>';
-  const mVals2=months.map(m=>{const wks=D.weeks.filter(w=>D.wk2m[w]===m);return aggPFC(getBase(sites,wks,verts)).c;});
-  mVals2.forEach(c=>{h+=`<td>${fmt(c)}</td>`;});
-  if(months.length>1){const a=mVals2[mVals2.length-2],b=mVals2[mVals2.length-1];h+=`<td>${delta(a,b)}</td>`;}
-  h+=`<td>${fmt(aggPFC(getBase(sites,D.weeks,verts)).c)}</td></tr></tbody>`;
+
+  // Pan India row
+  const piMVals=months.map(m=>{
+    const wks=D.weeks.filter(w=>D.wk2m[w]===m);
+    return aggPFC(getBase(sites,wks,verts)).c;
+  });
+  const piWkVals=last8.map(w=>aggPFC(getBase(sites,[w],verts)).c);
+  const piOv=aggPFC(getBase(sites,D.weeks,verts));
+  const piMomA=piMVals[piMVals.length-2],piMomB=piMVals[piMVals.length-1];
+  h+='<tr class="tot-row"><td class="lft">Pan India</td><td class="lft muted" style="font-size:11px">All</td>';
+  piMVals.forEach((c,i)=>{
+    const isLast=i===piMVals.length-1;
+    h+=`<td style="${isLast?'border-right:3px solid var(--line);':''}">${fmt(c)}</td>`;
+  });
+  piWkVals.forEach(c=>{h+=`<td style="background:#f2f4f8">${fmt(c)}</td>`;});
+  h+=`<td>${delta(piMomA,piMomB)}</td><td>${fmt(piOv.c)}</td></tr>`;
+  h+='</tbody>';
   document.getElementById('month-trend').innerHTML=h;
 }
 
@@ -681,16 +672,18 @@ function drawVertTable(sites,weeks){
 }
 
 function drawReasonTable(sites,weeks,verts){
-  const vs=new Set(verts),ss=new Set(sites),ws=new Set(weeks);
-  const list=D.fail_reasons.filter(r=>ss.has(r.s)&&ws.has(r.w)&&(verts.includes('Apparel')||verts.includes('Footwear')));
+  const ss=new Set(sites),ws=new Set(weeks);
+  const list=D.fail_reasons.filter(r=>ss.has(r.s)&&ws.has(r.w));
   const agg={};let tot=0;
   list.forEach(r=>{agg[r.reason]=(agg[r.reason]||0)+r.count;tot+=r.count;});
-  const sorted=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,12);
+  const sorted=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const mx=sorted.length?sorted[0][1]:1;
-  document.getElementById('reason-head').innerHTML=`Failure reasons · <b>${n(tot)}</b> total`;
-  let h='<thead><tr><th>Failure reason</th><th></th><th>Count</th><th>%</th></tr></thead><tbody>';
-  h+=sorted.map(([k,v])=>`<tr><td>${k}</td>
-    <td style="width:70px"><span class="hbar-r" style="width:${Math.max(3,v/mx*60)}px"></span></td>
+  document.getElementById('reason-head').innerHTML=`Failure reasons · <b>${n(tot)}</b> total · last 8 wks`;
+  let h='<colgroup><col style="width:55%"><col style="width:20%"><col style="width:12%"><col style="width:13%"></colgroup>';
+  h+='<thead><tr><th class="lft">Reason</th><th></th><th>Count</th><th>%</th></tr></thead><tbody>';
+  h+=sorted.map(([k,v])=>`<tr>
+    <td class="lft" style="font-size:11px;white-space:normal;max-width:0;overflow:hidden;text-overflow:ellipsis" title="${k}">${k.length>30?k.slice(0,29)+'…':k}</td>
+    <td><span class="hbar-r" style="width:${Math.max(3,v/mx*38)}px"></span></td>
     <td>${n(v)}</td><td class="muted">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`).join('')
     ||'<tr><td colspan="4" class="muted">—</td></tr>';
   document.getElementById('reason-table').innerHTML=h+'</tbody>';
@@ -702,15 +695,17 @@ function drawVertFailTable(sites,weeks){
   const agg={Apparel:{},Footwear:{}};
   list.forEach(r=>{const v=r.v==='Apparel'?'Apparel':r.v==='Footwear'?'Footwear':null;
     if(v)agg[v][r.reason]=(agg[v][r.reason]||0)+r.count;});
-  let h='<thead><tr><th>Reason</th><th>Apparel</th><th>Footwear</th></tr></thead><tbody>';
   const allR=new Set([...Object.keys(agg.Apparel),...Object.keys(agg.Footwear)]);
-  const sorted=[...allR].sort((a,b)=>((agg.Apparel[b]||0)+(agg.Footwear[b]||0))-((agg.Apparel[a]||0)+(agg.Footwear[a]||0))).slice(0,8);
+  const sorted=[...allR].sort((a,b)=>((agg.Apparel[b]||0)+(agg.Footwear[b]||0))-((agg.Apparel[a]||0)+(agg.Footwear[a]||0))).slice(0,6);
   const mx=Math.max(...sorted.map(r=>(agg.Apparel[r]||0)+(agg.Footwear[r]||0)),1);
+  let h='<colgroup><col style="width:44%"><col style="width:28%"><col style="width:28%"></colgroup>';
+  h+='<thead><tr><th class="lft">Reason</th><th>Apparel</th><th>Footwear</th></tr></thead><tbody>';
   sorted.forEach(r=>{
     const av=agg.Apparel[r]||0,fv=agg.Footwear[r]||0;
-    h+=`<tr><td>${r}</td>
-      <td>${av?`<span class="hbar-r" style="width:${Math.max(2,av/mx*50)}px"></span> ${n(av)}`:'—'}</td>
-      <td>${fv?`<span class="hbar-r" style="width:${Math.max(2,fv/mx*50)}px"></span> ${n(fv)}`:'—'}</td></tr>`;
+    const rshort=r.length>28?r.slice(0,27)+'…':r;
+    h+=`<tr><td class="lft" style="font-size:11px" title="${r}">${rshort}</td>
+      <td style="font-size:11px">${av?`<span class="hbar-r" style="width:${Math.max(2,av/mx*30)}px"></span> ${n(av)}`:'—'}</td>
+      <td style="font-size:11px">${fv?`<span class="hbar-r" style="width:${Math.max(2,fv/mx*30)}px"></span> ${n(fv)}`:'—'}</td></tr>`;
   });
   document.getElementById('vert-fail-table').innerHTML=h+'</tbody>';
 }
@@ -736,25 +731,6 @@ function drawTaskHeat(sites,weeks){
   const colT={};sites.forEach(s=>{colT[s]=sorted_t.reduce((a,t)=>a+(cell[t+'|'+s]||0),0);});
   h+=`<tr style="background:#f2f4f8"><td><b>Total</b></td>`+sites.map(s=>`<td><b>${n(colT[s])}</b></td>`).join('')+`<td><b>${n(sorted_t.reduce((a,t)=>a+rowT[t],0))}</b></td></tr>`;
   document.getElementById('task-heat').innerHTML=h+'</tbody>';
-}
-
-function drawSiteTable(sites,weeks,verts){
-  let h='<thead><tr><th>Site</th><th>Zone</th>';
-  D.months.forEach(m=>{h+=`<th>${m}</th>`;});
-  h+='<th>Overall</th><th>App conv%</th><th>Ftw conv%</th><th>Total fails</th><th>Top failure reason</th></tr></thead><tbody>';
-  sites.forEach(s=>{
-    const z=D.zone_of[s]||'',sf=D.site_findings[s]||{};
-    h+=`<tr class="zband ${z}"><td>${s}</td><td class="muted">${z}</td>`;
-    D.months.forEach(m=>{const wks=D.weeks.filter(w=>D.wk2m[w]===m);const o=aggPFC(getBase([s],wks,verts));h+=`<td>${fmt(o.c)}</td>`;});
-    const ov2=aggPFC(getBase([s],weeks,verts));
-    const app2=aggPFC(getBase([s],weeks,['Apparel']));
-    const ftw2=aggPFC(getBase([s],weeks,['Footwear']));
-    h+=`<td>${fmt(ov2.c)}</td><td>${fmt(app2.c)}</td><td>${fmt(ftw2.c)}</td>
-      <td class="muted">${n(sf.total_fails||0)}</td>
-      <td><span class="pill">${sf.top_reason||'—'}</span></td></tr>`;
-  });
-  h+='</tbody>';
-  document.getElementById('site-table').innerHTML=h;
 }
 
 function drawSiteFinds(sites,weeks,verts){
