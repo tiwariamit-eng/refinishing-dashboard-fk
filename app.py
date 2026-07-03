@@ -349,6 +349,12 @@ tr.tot-row td{background:#f2f4f8;font-weight:700;border-top:1px solid var(--line
 .dc .v.hit{color:var(--hit)}.dc .v.miss{color:var(--miss)}.dc .v.warn{color:var(--warn)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:0}
 .two>div:first-child{border-right:1px solid var(--line2)}
+tr.row-selected td{background:#eef2ff !important;font-weight:600}
+tr.row-selected td.lft{color:var(--accent)}
+.site-tag{display:inline-flex;align-items:center;gap:6px;padding:2px 8px;border-radius:6px;
+  font-size:11px;font-weight:600;background:#eef2ff;color:var(--accent);border:1px solid #c7d4ff}
+.site-tag .x{cursor:pointer;font-size:12px;color:var(--accent);margin-left:2px}
+.site-tag .x:hover{color:var(--up)}
 @media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}.dcards,.two{grid-template-columns:1fr}}
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
@@ -404,12 +410,15 @@ tr.tot-row td{background:#f2f4f8;font-weight:700;border-top:1px solid var(--line
 <section>
   <div class="shead"><span class="n">03</span><h2>Vertical breakdown</h2><span class="h">Apparel vs Footwear · last 8 weeks · site × vertical conversion</span></div>
   <div class="split">
-    <div class="card tscroll"><div class="subhead">Site × vertical — last 8 weeks</div><table id="vert-table"></table></div>
+    <div class="card tscroll"><div class="subhead">Site × vertical — last 8 weeks · <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--faint)">click a row to filter right panel →</span></div><table id="vert-table"></table></div>
     <div class="card" style="min-width:0;overflow:hidden">
-      <div class="subhead" id="reason-head">Failure reasons · in scope</div>
+      <div style="display:flex;align-items:center;gap:8px;padding:12px 18px 4px;border-bottom:1px solid var(--line2)">
+        <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)" id="reason-head">Failure reasons</span>
+        <span id="reason-site-tag" style="margin-left:4px"></span>
+      </div>
       <div style="overflow-x:hidden"><table id="reason-table" style="table-layout:fixed;width:100%"></table></div>
-      <div class="subhead" style="margin-top:8px">Week-on-week · top 5 failure reasons</div>
-      <div class="note" style="padding:4px 18px 6px">Bar width = count relative to that reason's peak week · Trend = first vs last week in view</div>
+      <div class="subhead" style="margin-top:8px">Week-on-week · top 5 failure reasons (%)</div>
+      <div class="note" style="padding:4px 18px 6px">Bar = % share of that week's total failures · Trend = first vs last week in view</div>
       <div style="overflow-x:auto;padding:0 4px 10px"><table id="wow-reason-table" style="width:100%;font-size:11px"></table></div>
     </div>
   </div>
@@ -437,6 +446,7 @@ tr.tot-row td{background:#f2f4f8;font-weight:700;border-top:1px solid var(--line
 const D=/*__RF_DATA__*/;
 const ZC={North:'#3b6fd4',South:'#0e9b8a',East:'#e0952a',West:'#8a4fd0',Unknown:'#94a0af'};
 const state={zone:new Set(),month:new Set(),vert:new Set()};
+let selectedSite=null;
 
 function cvCls(v){if(v===null||v===undefined)return'cv-n';if(v>=D.target)return'cv-g';if(v>=D.target-5)return'cv-y';return'cv-r';}
 function fmt(v,d=1){if(v===null||v===undefined)return'<span class="cv-n">—</span>';return`<span class="${cvCls(v)}">${v.toFixed(d)}%</span>`;}
@@ -545,9 +555,10 @@ function render(){
   drawZoneTrend(sites,weeks,verts);
   drawZoneFinds(sites,weeks,verts);
   const last8=D.weeks.slice(-8);
-  drawVertTable(sites,last8);
-  drawReasonTable(sites,weeks,verts);
-  drawWoWReasons(sites,weeks,verts);
+  drawVertTable(sites,last8,weeks,verts);
+  const reasonSites=selectedSite?[selectedSite]:sites;
+  drawReasonTable(reasonSites,weeks,verts);
+  drawWoWReasons(reasonSites,weeks,verts);
   drawTaskHeat(sites,weeks);
   drawSiteFinds(sites,weeks,verts);
   drawDrill();
@@ -656,14 +667,17 @@ function drawZoneFinds(sites,weeks,verts){
   document.getElementById('zone-finds').innerHTML=html||'<span class="muted">No zone data.</span>';
 }
 
-function drawVertTable(sites,weeks){
-  let h='<thead><tr><th>Site</th><th>Zone</th><th>Apparel</th><th>Footwear</th><th>App samples</th><th>Ftw samples</th><th>Gap (App−Ftw)</th></tr></thead><tbody>';
+function drawVertTable(sites,last8,weeks,verts){
+  let h='<thead><tr><th class="lft">Site</th><th class="lft">Zone</th><th>Apparel</th><th>Footwear</th><th>App samples</th><th>Ftw samples</th><th>Gap (App−Ftw)</th></tr></thead><tbody>';
   sites.forEach(s=>{
     const z=D.zone_of[s]||'';
-    const app2=aggPFC(getBase([s],weeks,['Apparel']));
-    const ftw2=aggPFC(getBase([s],weeks,['Footwear']));
+    const app2=aggPFC(getBase([s],last8,['Apparel']));
+    const ftw2=aggPFC(getBase([s],last8,['Footwear']));
     const gap=app2.c!==null&&ftw2.c!==null?(app2.c-ftw2.c).toFixed(1):null;
-    h+=`<tr class="zband ${z}"><td>${s}</td><td class="muted">${z}</td>
+    const isSel=selectedSite===s;
+    h+=`<tr class="zband ${z}${isSel?' row-selected':''}" style="cursor:pointer" onclick="selectSite('${s.replace(/'/g,"\\'")}')">
+      <td class="lft">${s}${isSel?' <span style="color:var(--accent);font-size:10px">◀</span>':''}</td>
+      <td class="lft muted" style="font-size:11px">${z}</td>
       <td>${fmt(app2.c)}</td><td>${fmt(ftw2.c)}</td>
       <td class="muted">${n(app2.p+app2.f)}</td><td class="muted">${n(ftw2.p+ftw2.f)}</td>
       <td class="${gap!==null?(parseFloat(gap)<0?'delta-up':'delta-dn'):'cv-n'}">${gap!==null?(parseFloat(gap)<0?'▲ ':'▼ ')+Math.abs(parseFloat(gap))+'%':'—'}</td></tr>`;
@@ -672,24 +686,39 @@ function drawVertTable(sites,weeks){
   document.getElementById('vert-table').innerHTML=h;
 }
 
+function selectSite(s){
+  selectedSite=(selectedSite===s)?null:s;
+  const sites=fSites(),weeks=fWeeks(),verts=fVerts();
+  const last8=D.weeks.slice(-8);
+  drawVertTable(sites,last8,weeks,verts);
+  const reasonSites=selectedSite?[selectedSite]:sites;
+  drawReasonTable(reasonSites,weeks,verts);
+  drawWoWReasons(reasonSites,weeks,verts);
+}
+
 function drawReasonTable(sites,weeks,verts){
-  const ss=new Set(sites),ws=new Set(weeks),vs=new Set(verts);
-  // filter by vertical if apparel/footwear selected
-  const vertFilter=verts.length===1||verts.includes('Apparel')&&!verts.includes('Footwear')||!verts.includes('Apparel')&&verts.includes('Footwear');
+  const ss=new Set(sites),ws=new Set(weeks);
   const list=D.fail_reasons.filter(r=>{
     if(!ss.has(r.s)||!ws.has(r.w))return false;
-    if(vs.has('Apparel')&&vs.has('Footwear'))return true;
-    if(vs.has('Apparel')&&!vs.has('Footwear'))return r.v==='Apparel';
-    if(vs.has('Footwear')&&!vs.has('Apparel'))return r.v==='Footwear';
+    if(verts.includes('Apparel')&&!verts.includes('Footwear'))return r.v==='Apparel';
+    if(verts.includes('Footwear')&&!verts.includes('Apparel'))return r.v==='Footwear';
     return true;
   });
   const agg={};let tot=0;
   list.forEach(r=>{agg[r.reason]=(agg[r.reason]||0)+r.count;tot+=r.count;});
   const sorted=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const mx=sorted.length?sorted[0][1]:1;
-  const siteLabel=sites.length===1?` · ${sites[0]}`:'';
+
+  // update site tag in header
+  const tagEl=document.getElementById('reason-site-tag');
   const vertLabel=verts.includes('Apparel')&&!verts.includes('Footwear')?' · Apparel':!verts.includes('Apparel')&&verts.includes('Footwear')?' · Footwear':'';
-  document.getElementById('reason-head').innerHTML=`Failure reasons${siteLabel}${vertLabel} · <b>${n(tot)}</b> total`;
+  document.getElementById('reason-head').textContent=`Failure reasons · ${n(tot)} total${vertLabel}`;
+  if(selectedSite){
+    tagEl.innerHTML=`<span class="site-tag">${selectedSite}<span class="x" onclick="selectSite('${selectedSite.replace(/'/g,"\\'")}')">✕</span></span>`;
+  } else {
+    tagEl.innerHTML=`<span style="font-size:10px;color:var(--faint)">all sites · click a row to filter</span>`;
+  }
+
   let h='<colgroup><col style="width:52%"><col style="width:18%"><col style="width:14%"><col style="width:16%"></colgroup>';
   h+='<thead><tr><th class="lft">Reason</th><th></th><th>Count</th><th>%</th></tr></thead><tbody>';
   h+=sorted.map(([k,v])=>`<tr>
@@ -697,78 +726,62 @@ function drawReasonTable(sites,weeks,verts){
     <td><span class="hbar-r" style="width:${Math.max(3,v/mx*40)}px"></span></td>
     <td style="font-size:11px">${n(v)}</td>
     <td class="muted" style="font-size:11px">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`).join('')
-    ||'<tr><td colspan="4" class="muted">No failures.</td></tr>';
+    ||'<tr><td colspan="4" class="muted" style="padding:10px">No failures.</td></tr>';
   document.getElementById('reason-table').innerHTML=h+'</tbody>';
 }
 
 function drawWoWReasons(sites,weeks,verts){
   const ss=new Set(sites),ws=new Set(weeks);
-  // filter by vertical
   const list=D.fail_reasons.filter(r=>{
     if(!ss.has(r.s)||!ws.has(r.w))return false;
     if(verts.includes('Apparel')&&!verts.includes('Footwear'))return r.v==='Apparel';
     if(verts.includes('Footwear')&&!verts.includes('Apparel'))return r.v==='Footwear';
     return true;
   });
-
-  // get top 5 reasons overall
   const totAgg={};
   list.forEach(r=>{totAgg[r.reason]=(totAgg[r.reason]||0)+r.count;});
   const top5=Object.entries(totAgg).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([r])=>r);
   if(!top5.length){document.getElementById('wow-reason-table').innerHTML='<tr><td class="muted" style="padding:10px">No failure data.</td></tr>';return;}
-
-  // build week × reason matrix
   const cell={};
   list.filter(r=>top5.includes(r.reason)).forEach(r=>{
     const k=r.reason+'|'+r.w;cell[k]=(cell[k]||0)+r.count;
   });
-
-  // per-week totals (for % calculation)
   const wkTot={};
   weeks.forEach(w=>{wkTot[w]=list.filter(r=>r.w===w).reduce((s,r)=>s+r.count,0);});
-
-  // max count per reason (for bar scaling)
-  const reasonMax={};
-  top5.forEach(r=>{reasonMax[r]=Math.max(...weeks.map(w=>cell[r+'|'+w]||0),1);});
-
-  // COLOURS per reason
   const RCOL=['#d64550','#e0952a','#8a4fd0','#0e9b8a','#3b6fd4'];
-
-  const showWks=weeks.slice(-8); // show last 8 in this view
-
-  let h='<thead><tr><th class="lft" style="font-size:10px;min-width:110px">Reason</th>';
-  showWks.forEach(w=>{h+=`<th style="font-size:10px;text-align:center;min-width:52px">Wk${w}<br><span style="font-size:9px;font-weight:400;color:var(--faint)">${(D.wk2m[w]||'').replace(' 26','')}</span></th>`;});
-  h+='<th style="font-size:10px;text-align:center">Trend</th></tr></thead><tbody>';
-
+  const showWks=weeks.slice(-8);
+  let h='<thead><tr><th class="lft" style="font-size:10px;min-width:100px">Reason</th>';
+  showWks.forEach(w=>{h+=`<th style="font-size:10px;text-align:center;min-width:48px">Wk${w}<br><span style="font-size:9px;font-weight:400;color:var(--faint)">${(D.wk2m[w]||'').replace(' 26','')}</span></th>`;});
+  h+='<th style="font-size:10px;text-align:center;min-width:52px">Trend</th></tr></thead><tbody>';
   top5.forEach((r,ri)=>{
-    const rshort=r.length>22?r.slice(0,21)+'…':r;
+    const rshort=r.length>20?r.slice(0,19)+'…':r;
     const col=RCOL[ri%RCOL.length];
-    const wkVals=showWks.map(w=>cell[r+'|'+w]||0);
-    const first=wkVals[0],last=wkVals[wkVals.length-1];
-    const trend=first>0?((last-first)/first*100).toFixed(0):null;
-    const trendHtml=trend===null?'—':parseFloat(trend)<=0
-      ?`<span class="delta-dn" style="font-size:10px">▼ ${Math.abs(trend)}%</span>`
-      :`<span class="delta-up" style="font-size:10px">▲ +${trend}%</span>`;
+    const pctVals=showWks.map(w=>{
+      const cnt=cell[r+'|'+w]||0;
+      return wkTot[w]>0?Math.round(cnt/wkTot[w]*100):0;
+    });
+    const firstPct=pctVals[0],lastPct=pctVals[pctVals.length-1];
+    const trendDiff=lastPct-firstPct;
+    const trendHtml=firstPct===0?'—':trendDiff<0
+      ?`<span class="delta-dn" style="font-size:10px">▼ ${Math.abs(trendDiff)}pp</span>`
+      :trendDiff>0?`<span class="delta-up" style="font-size:10px">▲ +${trendDiff}pp</span>`
+      :`<span style="font-size:10px;color:var(--muted)">→</span>`;
     h+=`<tr><td class="lft" style="font-size:11px;white-space:normal;vertical-align:middle" title="${r}">${rshort}</td>`;
-    wkVals.forEach((cnt,wi)=>{
-      const pct=wkTot[showWks[wi]]>0?(cnt/wkTot[showWks[wi]]*100).toFixed(0):0;
-      const barW=Math.max(cnt>0?4:0,Math.round(cnt/reasonMax[r]*44));
-      h+=`<td style="text-align:center;padding:5px 4px;vertical-align:middle">
-        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+    pctVals.forEach(pct=>{
+      const barW=Math.round(pct/100*44);
+      h+=`<td style="text-align:center;padding:5px 3px;vertical-align:middle">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:1px">
           <div style="width:44px;height:10px;background:var(--line2);border-radius:2px;overflow:hidden">
-            <div style="width:${barW}px;height:10px;background:${col};border-radius:2px"></div>
+            <div style="width:${Math.max(pct>0?2:0,barW)}px;height:10px;background:${col};border-radius:2px"></div>
           </div>
-          <span style="font-size:9px;color:var(--muted)">${cnt>0?cnt:''}</span>
+          <span style="font-size:9px;font-weight:600;color:${col}">${pct>0?pct+'%':''}</span>
         </div></td>`;
     });
-    h+=`<td style="text-align:center;font-size:11px">${trendHtml}</td></tr>`;
+    h+=`<td style="text-align:center">${trendHtml}</td></tr>`;
   });
-
-  // Total fails per week row
   h+='<tr style="background:#f2f4f8;border-top:1px solid var(--line)"><td class="lft" style="font-size:11px;font-weight:600">Total fails</td>';
   showWks.forEach(w=>{h+=`<td style="text-align:center;font-size:11px;font-weight:600">${n(wkTot[w]||0)}</td>`;});
-  h+='<td></td></tr>';
-  h+='</tbody>';
+  h+='<td></td></tr></tbody>';
   document.getElementById('wow-reason-table').innerHTML=h;
 }
 
