@@ -406,10 +406,11 @@ tr.tot-row td{background:#f2f4f8;font-weight:700;border-top:1px solid var(--line
   <div class="split">
     <div class="card tscroll"><div class="subhead">Site × vertical — last 8 weeks</div><table id="vert-table"></table></div>
     <div class="card" style="min-width:0;overflow:hidden">
-      <div class="subhead" id="reason-head">Failure reasons · last 8 weeks</div>
+      <div class="subhead" id="reason-head">Failure reasons · in scope</div>
       <div style="overflow-x:hidden"><table id="reason-table" style="table-layout:fixed;width:100%"></table></div>
-      <div class="subhead" style="margin-top:8px">Vertical failure split</div>
-      <div style="overflow-x:hidden"><table id="vert-fail-table" style="table-layout:fixed;width:100%"></table></div>
+      <div class="subhead" style="margin-top:8px">Week-on-week · top 5 failure reasons</div>
+      <div class="note" style="padding:4px 18px 6px">Bar width = count relative to that reason's peak week · Trend = first vs last week in view</div>
+      <div style="overflow-x:auto;padding:0 4px 10px"><table id="wow-reason-table" style="width:100%;font-size:11px"></table></div>
     </div>
   </div>
   <div style="margin-top:14px"><div class="finds" id="site-finds"></div></div>
@@ -545,8 +546,8 @@ function render(){
   drawZoneFinds(sites,weeks,verts);
   const last8=D.weeks.slice(-8);
   drawVertTable(sites,last8);
-  drawReasonTable(sites,last8,verts);
-  drawVertFailTable(sites,last8);
+  drawReasonTable(sites,weeks,verts);
+  drawWoWReasons(sites,weeks,verts);
   drawTaskHeat(sites,weeks);
   drawSiteFinds(sites,weeks,verts);
   drawDrill();
@@ -672,42 +673,103 @@ function drawVertTable(sites,weeks){
 }
 
 function drawReasonTable(sites,weeks,verts){
-  const ss=new Set(sites),ws=new Set(weeks);
-  const list=D.fail_reasons.filter(r=>ss.has(r.s)&&ws.has(r.w));
+  const ss=new Set(sites),ws=new Set(weeks),vs=new Set(verts);
+  // filter by vertical if apparel/footwear selected
+  const vertFilter=verts.length===1||verts.includes('Apparel')&&!verts.includes('Footwear')||!verts.includes('Apparel')&&verts.includes('Footwear');
+  const list=D.fail_reasons.filter(r=>{
+    if(!ss.has(r.s)||!ws.has(r.w))return false;
+    if(vs.has('Apparel')&&vs.has('Footwear'))return true;
+    if(vs.has('Apparel')&&!vs.has('Footwear'))return r.v==='Apparel';
+    if(vs.has('Footwear')&&!vs.has('Apparel'))return r.v==='Footwear';
+    return true;
+  });
   const agg={};let tot=0;
   list.forEach(r=>{agg[r.reason]=(agg[r.reason]||0)+r.count;tot+=r.count;});
   const sorted=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const mx=sorted.length?sorted[0][1]:1;
-  document.getElementById('reason-head').innerHTML=`Failure reasons · <b>${n(tot)}</b> total · last 8 wks`;
-  let h='<colgroup><col style="width:55%"><col style="width:20%"><col style="width:12%"><col style="width:13%"></colgroup>';
+  const siteLabel=sites.length===1?` · ${sites[0]}`:'';
+  const vertLabel=verts.includes('Apparel')&&!verts.includes('Footwear')?' · Apparel':!verts.includes('Apparel')&&verts.includes('Footwear')?' · Footwear':'';
+  document.getElementById('reason-head').innerHTML=`Failure reasons${siteLabel}${vertLabel} · <b>${n(tot)}</b> total`;
+  let h='<colgroup><col style="width:52%"><col style="width:18%"><col style="width:14%"><col style="width:16%"></colgroup>';
   h+='<thead><tr><th class="lft">Reason</th><th></th><th>Count</th><th>%</th></tr></thead><tbody>';
   h+=sorted.map(([k,v])=>`<tr>
-    <td class="lft" style="font-size:11px;white-space:normal;max-width:0;overflow:hidden;text-overflow:ellipsis" title="${k}">${k.length>30?k.slice(0,29)+'…':k}</td>
-    <td><span class="hbar-r" style="width:${Math.max(3,v/mx*38)}px"></span></td>
-    <td>${n(v)}</td><td class="muted">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`).join('')
-    ||'<tr><td colspan="4" class="muted">—</td></tr>';
+    <td class="lft" style="font-size:11px;white-space:normal" title="${k}">${k.length>32?k.slice(0,31)+'…':k}</td>
+    <td><span class="hbar-r" style="width:${Math.max(3,v/mx*40)}px"></span></td>
+    <td style="font-size:11px">${n(v)}</td>
+    <td class="muted" style="font-size:11px">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`).join('')
+    ||'<tr><td colspan="4" class="muted">No failures.</td></tr>';
   document.getElementById('reason-table').innerHTML=h+'</tbody>';
 }
 
-function drawVertFailTable(sites,weeks){
+function drawWoWReasons(sites,weeks,verts){
   const ss=new Set(sites),ws=new Set(weeks);
-  const list=D.fail_reasons.filter(r=>ss.has(r.s)&&ws.has(r.w));
-  const agg={Apparel:{},Footwear:{}};
-  list.forEach(r=>{const v=r.v==='Apparel'?'Apparel':r.v==='Footwear'?'Footwear':null;
-    if(v)agg[v][r.reason]=(agg[v][r.reason]||0)+r.count;});
-  const allR=new Set([...Object.keys(agg.Apparel),...Object.keys(agg.Footwear)]);
-  const sorted=[...allR].sort((a,b)=>((agg.Apparel[b]||0)+(agg.Footwear[b]||0))-((agg.Apparel[a]||0)+(agg.Footwear[a]||0))).slice(0,6);
-  const mx=Math.max(...sorted.map(r=>(agg.Apparel[r]||0)+(agg.Footwear[r]||0)),1);
-  let h='<colgroup><col style="width:44%"><col style="width:28%"><col style="width:28%"></colgroup>';
-  h+='<thead><tr><th class="lft">Reason</th><th>Apparel</th><th>Footwear</th></tr></thead><tbody>';
-  sorted.forEach(r=>{
-    const av=agg.Apparel[r]||0,fv=agg.Footwear[r]||0;
-    const rshort=r.length>28?r.slice(0,27)+'…':r;
-    h+=`<tr><td class="lft" style="font-size:11px" title="${r}">${rshort}</td>
-      <td style="font-size:11px">${av?`<span class="hbar-r" style="width:${Math.max(2,av/mx*30)}px"></span> ${n(av)}`:'—'}</td>
-      <td style="font-size:11px">${fv?`<span class="hbar-r" style="width:${Math.max(2,fv/mx*30)}px"></span> ${n(fv)}`:'—'}</td></tr>`;
+  // filter by vertical
+  const list=D.fail_reasons.filter(r=>{
+    if(!ss.has(r.s)||!ws.has(r.w))return false;
+    if(verts.includes('Apparel')&&!verts.includes('Footwear'))return r.v==='Apparel';
+    if(verts.includes('Footwear')&&!verts.includes('Apparel'))return r.v==='Footwear';
+    return true;
   });
-  document.getElementById('vert-fail-table').innerHTML=h+'</tbody>';
+
+  // get top 5 reasons overall
+  const totAgg={};
+  list.forEach(r=>{totAgg[r.reason]=(totAgg[r.reason]||0)+r.count;});
+  const top5=Object.entries(totAgg).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([r])=>r);
+  if(!top5.length){document.getElementById('wow-reason-table').innerHTML='<tr><td class="muted" style="padding:10px">No failure data.</td></tr>';return;}
+
+  // build week × reason matrix
+  const cell={};
+  list.filter(r=>top5.includes(r.reason)).forEach(r=>{
+    const k=r.reason+'|'+r.w;cell[k]=(cell[k]||0)+r.count;
+  });
+
+  // per-week totals (for % calculation)
+  const wkTot={};
+  weeks.forEach(w=>{wkTot[w]=list.filter(r=>r.w===w).reduce((s,r)=>s+r.count,0);});
+
+  // max count per reason (for bar scaling)
+  const reasonMax={};
+  top5.forEach(r=>{reasonMax[r]=Math.max(...weeks.map(w=>cell[r+'|'+w]||0),1);});
+
+  // COLOURS per reason
+  const RCOL=['#d64550','#e0952a','#8a4fd0','#0e9b8a','#3b6fd4'];
+
+  const showWks=weeks.slice(-8); // show last 8 in this view
+
+  let h='<thead><tr><th class="lft" style="font-size:10px;min-width:110px">Reason</th>';
+  showWks.forEach(w=>{h+=`<th style="font-size:10px;text-align:center;min-width:52px">Wk${w}<br><span style="font-size:9px;font-weight:400;color:var(--faint)">${(D.wk2m[w]||'').replace(' 26','')}</span></th>`;});
+  h+='<th style="font-size:10px;text-align:center">Trend</th></tr></thead><tbody>';
+
+  top5.forEach((r,ri)=>{
+    const rshort=r.length>22?r.slice(0,21)+'…':r;
+    const col=RCOL[ri%RCOL.length];
+    const wkVals=showWks.map(w=>cell[r+'|'+w]||0);
+    const first=wkVals[0],last=wkVals[wkVals.length-1];
+    const trend=first>0?((last-first)/first*100).toFixed(0):null;
+    const trendHtml=trend===null?'—':parseFloat(trend)<=0
+      ?`<span class="delta-dn" style="font-size:10px">▼ ${Math.abs(trend)}%</span>`
+      :`<span class="delta-up" style="font-size:10px">▲ +${trend}%</span>`;
+    h+=`<tr><td class="lft" style="font-size:11px;white-space:normal;vertical-align:middle" title="${r}">${rshort}</td>`;
+    wkVals.forEach((cnt,wi)=>{
+      const pct=wkTot[showWks[wi]]>0?(cnt/wkTot[showWks[wi]]*100).toFixed(0):0;
+      const barW=Math.max(cnt>0?4:0,Math.round(cnt/reasonMax[r]*44));
+      h+=`<td style="text-align:center;padding:5px 4px;vertical-align:middle">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:2px">
+          <div style="width:44px;height:10px;background:var(--line2);border-radius:2px;overflow:hidden">
+            <div style="width:${barW}px;height:10px;background:${col};border-radius:2px"></div>
+          </div>
+          <span style="font-size:9px;color:var(--muted)">${cnt>0?cnt:''}</span>
+        </div></td>`;
+    });
+    h+=`<td style="text-align:center;font-size:11px">${trendHtml}</td></tr>`;
+  });
+
+  // Total fails per week row
+  h+='<tr style="background:#f2f4f8;border-top:1px solid var(--line)"><td class="lft" style="font-size:11px;font-weight:600">Total fails</td>';
+  showWks.forEach(w=>{h+=`<td style="text-align:center;font-size:11px;font-weight:600">${n(wkTot[w]||0)}</td>`;});
+  h+='<td></td></tr>';
+  h+='</tbody>';
+  document.getElementById('wow-reason-table').innerHTML=h;
 }
 
 function drawTaskHeat(sites,weeks){
