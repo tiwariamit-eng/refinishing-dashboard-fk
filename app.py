@@ -410,7 +410,7 @@ tr.row-selected td.lft{color:var(--accent)}
 <section>
   <div class="shead"><span class="n">03</span><h2>Vertical breakdown</h2><span class="h">Apparel vs Footwear · last 8 weeks · site × vertical conversion</span></div>
   <div class="split">
-    <div class="card tscroll"><div class="subhead">Site × vertical — last 8 weeks · <span style="font-weight:400;text-transform:none;font-size:10px;color:var(--faint)">click a row to filter right panel →</span></div><table id="vert-table"></table></div>
+    <div class="card tscroll"><div class="subhead" id="vert-subhead">Site × vertical — Last 8 weeks</div><table id="vert-table"></table></div>
     <div class="card" style="min-width:0;overflow:hidden">
       <div style="display:flex;align-items:center;gap:8px;padding:12px 18px 4px;border-bottom:1px solid var(--line2)">
         <span style="font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)" id="reason-head">Failure reasons</span>
@@ -551,11 +551,13 @@ function render(){
   document.getElementById('kpis').innerHTML=K.map(k=>
     `<div class="kpi ${k.cls}"><div class="k">${k.k}</div><div class="v num">${k.v}</div><div class="d">${k.d}</div></div>`).join('');
 
+  // validate selectedSite against current filtered sites
+  if(selectedSite && !sites.includes(selectedSite)) selectedSite=null;
+
   drawMonthTrend(sites,verts);
   drawZoneTrend(sites,weeks,verts);
   drawZoneFinds(sites,weeks,verts);
-  const last8=D.weeks.slice(-8);
-  drawVertTable(sites,last8,weeks,verts);
+  drawVertTable(sites,weeks,verts);
   const reasonSites=selectedSite?[selectedSite]:sites;
   drawReasonTable(reasonSites,weeks,verts);
   drawWoWReasons(reasonSites,weeks,verts);
@@ -667,12 +669,19 @@ function drawZoneFinds(sites,weeks,verts){
   document.getElementById('zone-finds').innerHTML=html||'<span class="muted">No zone data.</span>';
 }
 
-function drawVertTable(sites,last8,weeks,verts){
+function drawVertTable(sites,weeks,verts){
+  // update subhead dynamically
+  const wr=document.getElementById('f-wkrange').value;
+  const mf=[...state.month];
+  const wkLabel=mf.length?mf.join(', '):wr==='last8'?'Last 8 weeks':wr==='last4'?'Last 4 weeks':wr==='last12'?'Last 12 weeks':'All weeks';
+  const el=document.getElementById('vert-subhead');
+  if(el)el.textContent=`Site × vertical — ${wkLabel} · ${weeks.length} weeks · click a row to filter right panel →`;
+
   let h='<thead><tr><th class="lft">Site</th><th class="lft">Zone</th><th>Apparel</th><th>Footwear</th><th>App samples</th><th>Ftw samples</th><th>Gap (App−Ftw)</th></tr></thead><tbody>';
   sites.forEach(s=>{
     const z=D.zone_of[s]||'';
-    const app2=aggPFC(getBase([s],last8,['Apparel']));
-    const ftw2=aggPFC(getBase([s],last8,['Footwear']));
+    const app2=aggPFC(getBase([s],weeks,['Apparel']));
+    const ftw2=aggPFC(getBase([s],weeks,['Footwear']));
     const gap=app2.c!==null&&ftw2.c!==null?(app2.c-ftw2.c).toFixed(1):null;
     const isSel=selectedSite===s;
     h+=`<tr class="zband ${z}${isSel?' row-selected':''}" style="cursor:pointer" onclick="selectSite('${s.replace(/'/g,"\\'")}')">
@@ -689,8 +698,7 @@ function drawVertTable(sites,last8,weeks,verts){
 function selectSite(s){
   selectedSite=(selectedSite===s)?null:s;
   const sites=fSites(),weeks=fWeeks(),verts=fVerts();
-  const last8=D.weeks.slice(-8);
-  drawVertTable(sites,last8,weeks,verts);
+  drawVertTable(sites,weeks,verts);
   const reasonSites=selectedSite?[selectedSite]:sites;
   drawReasonTable(reasonSites,weeks,verts);
   drawWoWReasons(reasonSites,weeks,verts);
@@ -749,7 +757,7 @@ function drawWoWReasons(sites,weeks,verts){
   const wkTot={};
   weeks.forEach(w=>{wkTot[w]=list.filter(r=>r.w===w).reduce((s,r)=>s+r.count,0);});
   const RCOL=['#d64550','#e0952a','#8a4fd0','#0e9b8a','#3b6fd4'];
-  const showWks=weeks.slice(-8);
+  const showWks=weeks; // show ALL filtered weeks - respects top filters
   let h='<thead><tr><th class="lft" style="font-size:10px;min-width:100px">Reason</th>';
   showWks.forEach(w=>{h+=`<th style="font-size:10px;text-align:center;min-width:48px">Wk${w}<br><span style="font-size:9px;font-weight:400;color:var(--faint)">${(D.wk2m[w]||'').replace(' 26','')}</span></th>`;});
   h+='<th style="font-size:10px;text-align:center;min-width:52px">Trend</th></tr></thead><tbody>';
