@@ -371,7 +371,10 @@ tr.row-selected td.lft{color:var(--accent)}
       <div class="fg"><label>Zone</label><div class="chips" id="f-zone"></div></div>
       <div class="fg"><label>Month</label><div class="chips" id="f-month"></div></div>
       <div class="fg"><label>Vertical</label><div class="chips" id="f-vert"></div></div>
-      <div class="fg"><label>Week range</label>
+      <div class="fg"><label>Week</label>
+        <div class="chips" id="f-week" style="max-width:500px;flex-wrap:wrap"></div>
+      </div>
+      <div class="fg"><label>Week range <span style="font-size:9px;color:var(--faint)">(when no week selected)</span></label>
         <select id="f-wkrange" onchange="render()">
           <option value="last8">Last 8 weeks</option>
           <option value="all">All weeks</option>
@@ -445,7 +448,7 @@ tr.row-selected td.lft{color:var(--accent)}
 <script>
 const D=/*__RF_DATA__*/;
 const ZC={North:'#3b6fd4',South:'#0e9b8a',East:'#e0952a',West:'#8a4fd0',Unknown:'#94a0af'};
-const state={zone:new Set(),month:new Set(),vert:new Set()};
+const state={zone:new Set(),month:new Set(),vert:new Set(),week:new Set()};
 let selectedSite=null;
 
 function cvCls(v){if(v===null||v===undefined)return'cv-n';if(v>=D.target)return'cv-g';if(v>=D.target-5)return'cv-y';return'cv-r';}
@@ -469,16 +472,27 @@ function buildFilters(){
   D.months.forEach(m=>fm.appendChild(chip(m,state.month,m,false)));
   const fv=document.getElementById('f-vert');
   ['Apparel','Footwear'].forEach(v=>fv.appendChild(chip(v,state.vert,v,false)));
+  // week chips — compact style
+  const fw=document.getElementById('f-week');
+  D.weeks.forEach(w=>{
+    const c=document.createElement('span');
+    c.className='chip'+(state.week.has(w)?' on':'');
+    c.textContent='Wk'+w;
+    c.style.padding='3px 7px';c.style.fontSize='11px';
+    c.dataset.wk=w;
+    c.onclick=()=>{state.week.has(w)?state.week.delete(w):state.week.add(w);render();};
+    fw.appendChild(c);
+  });
   const fs=document.getElementById('f-site');
   D.sites.forEach(s=>{const o=document.createElement('option');o.value=s;o.text=s;fs.appendChild(o);});
-  // drill week
   const dw=document.getElementById('drill-wk');
   D.weeks.slice().reverse().forEach(w=>{const o=document.createElement('option');o.value=w;o.text='Wk '+w+' · '+(D.wk2m[w]||'');dw.appendChild(o);});
   dw.onchange=drawDrill;
   document.getElementById('reset-btn').onclick=()=>{
-    state.zone.clear();state.month.clear();state.vert.clear();
+    state.zone.clear();state.month.clear();state.vert.clear();state.week.clear();
     document.getElementById('f-site').value='';
     document.getElementById('f-wkrange').value='last8';
+    selectedSite=null;
     buildChips();render();
   };
 }
@@ -486,6 +500,7 @@ function buildChips(){
   document.querySelectorAll('#f-zone .chip').forEach(c=>c.classList.toggle('on',state.zone.has(c.dataset.z)));
   document.querySelectorAll('#f-month .chip').forEach(c=>c.classList.toggle('on',state.month.has(c.textContent)));
   document.querySelectorAll('#f-vert .chip').forEach(c=>c.classList.toggle('on',state.vert.has(c.textContent)));
+  document.querySelectorAll('#f-week .chip').forEach(c=>c.classList.toggle('on',state.week.has(parseInt(c.dataset.wk))));
 }
 
 function fSites(){
@@ -496,15 +511,15 @@ function fSites(){
   return list;
 }
 function fWeeks(){
+  // Priority: 1) individual week chips, 2) month chips, 3) week range dropdown
+  if(state.week.size>0) return D.weeks.filter(w=>state.week.has(w));
   const mf=[...state.month],wr=document.getElementById('f-wkrange').value;
   let wks=D.weeks;
-  if(mf.length)wks=wks.filter(w=>mf.includes(D.wk2m[w]));
-  if(!mf.length){
-    if(wr==='last8')wks=D.weeks.slice(-8);
-    else if(wr==='last4')wks=D.weeks.slice(-4);
-    else if(wr==='last12')wks=D.weeks.slice(-12);
-  }
-  return wks;
+  if(mf.length) return wks.filter(w=>mf.includes(D.wk2m[w]));
+  if(wr==='last8') return D.weeks.slice(-8);
+  if(wr==='last4') return D.weeks.slice(-4);
+  if(wr==='last12') return D.weeks.slice(-12);
+  return D.weeks; // all
 }
 function fVerts(){const vf=[...state.vert];return vf.length?vf:['Apparel','Footwear','Other'];}
 
@@ -673,7 +688,9 @@ function drawVertTable(sites,weeks,verts){
   // update subhead dynamically
   const wr=document.getElementById('f-wkrange').value;
   const mf=[...state.month];
-  const wkLabel=mf.length?mf.join(', '):wr==='last8'?'Last 8 weeks':wr==='last4'?'Last 4 weeks':wr==='last12'?'Last 12 weeks':'All weeks';
+  const wkLabel=state.week.size>0?'Wk '+[...state.week].sort((a,b)=>a-b).join(', Wk '):
+    mf.length?mf.join(', '):
+    wr==='last8'?'Last 8 weeks':wr==='last4'?'Last 4 weeks':wr==='last12'?'Last 12 weeks':'All weeks';
   const el=document.getElementById('vert-subhead');
   if(el)el.textContent=`Site × vertical — ${wkLabel} · ${weeks.length} weeks · click a row to filter right panel →`;
 
