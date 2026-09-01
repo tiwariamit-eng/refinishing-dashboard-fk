@@ -770,23 +770,26 @@ function drawReasonTable(sites,weeks,verts){
     if(verts.includes('Footwear')&&!verts.includes('Apparel'))return r.v==='Footwear';
     return true;
   });
-  const agg={};let tot=0;
-  list.forEach(r=>{agg[r.reason]=(agg[r.reason]||0)+r.count;tot+=r.count;});
-  // tot includes No Issue (the true denominator), but we only DISPLAY the
-  // real defect reasons — so their shown percentages sum to less than 100%,
-  // correctly reflecting how much of the total volume each one represents.
-  const noIssueCount = agg['No Issue']||0;
-  const defectEntries = Object.entries(agg).filter(([k])=>k!=='No Issue');
-  const sorted = defectEntries.sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const agg={};
+  list.forEach(r=>{
+    if(r.reason==='No Issue')return; // never display this as a defect row
+    agg[r.reason]=(agg[r.reason]||0)+r.count;
+  });
+  const sorted=Object.entries(agg).sort((a,b)=>b[1]-a[1]).slice(0,10);
   const mx=sorted.length?sorted[0][1]:1;
-  const defectTot = defectEntries.reduce((a,[,v])=>a+v,0);
+  const defectTot=Object.values(agg).reduce((a,v)=>a+v,0);
+
+  // denominator = ALL samples checked (Pass + Fail) in this filtered scope —
+  // so each defect's % reflects its share of everything inspected, not just
+  // its share among fails. This matches "defect count ÷ overall checked".
+  const overall=aggPFC(getBase(sites,weeks,verts));
+  const overallTotal=overall.p+overall.f;
 
   // update site tag in header
   const tagEl=document.getElementById('reason-site-tag');
   const vertLabel=verts.includes('Apparel')&&!verts.includes('Footwear')?' · Apparel':!verts.includes('Apparel')&&verts.includes('Footwear')?' · Footwear':'';
-  const noIssuePct = tot ? (noIssueCount/tot*100).toFixed(1) : 0;
   document.getElementById('reason-head').textContent=
-    `Failure reasons · ${n(defectTot)} of ${n(tot)} total${vertLabel} · No Issue: ${noIssuePct}%`;
+    `Failure reasons · ${n(defectTot)} defects of ${n(overallTotal)} checked${vertLabel}`;
   if(selectedSite){
     tagEl.innerHTML=`<span class="site-tag">${selectedSite}<span class="x" onclick="selectSite('${selectedSite.replace(/'/g,"\\'")}')">✕</span></span>`;
   } else {
@@ -794,13 +797,13 @@ function drawReasonTable(sites,weeks,verts){
   }
 
   let h='<colgroup><col style="width:52%"><col style="width:18%"><col style="width:14%"><col style="width:16%"></colgroup>';
-  h+='<thead><tr><th class="lft">Reason</th><th></th><th>Count</th><th>% of total</th></tr></thead><tbody>';
+  h+='<thead><tr><th class="lft">Reason</th><th></th><th>Count</th><th>% of checked</th></tr></thead><tbody>';
   h+=sorted.map(([k,v])=>{
     return `<tr>
     <td class="lft" style="font-size:11px;white-space:normal" title="${k}">${k.length>32?k.slice(0,31)+'…':k}</td>
     <td><span class="hbar-r" style="width:${Math.max(3,v/mx*40)}px"></span></td>
     <td style="font-size:11px">${n(v)}</td>
-    <td class="muted" style="font-size:11px">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`;}).join('')
+    <td class="muted" style="font-size:11px">${overallTotal?(v/overallTotal*100).toFixed(2):0}%</td></tr>`;}).join('')
     ||'<tr><td colspan="4" class="muted" style="padding:10px">No failures.</td></tr>';
   document.getElementById('reason-table').innerHTML=h+'</tbody>';
 }
