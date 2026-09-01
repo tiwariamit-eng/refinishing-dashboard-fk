@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import json, io
+import json, io, os, tempfile
 import streamlit.components.v1 as components
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -15,17 +15,10 @@ st.markdown(
     "iframe{border:none !important;height:95vh !important;}</style>",
     unsafe_allow_html=True)
 
-FILE_IDS = [
-    "1ibNXvkUGNRhjuEQ37svRukLekD60Q9oc",
-    "192ZfI7KCH-2GJ3i0eYVwefM0dAMbbErM",
-    "1uxLSaaRHQQpvkwE6N2oubDS2KE2Pvukh",
-    "1_W4uVC_6BnaQlijsS7aFqLJjGhGQhF88",
-    "1VEDLEnSplFvPsktoLvZSgjYtSMnTJ6-5",
-    "1bBCgtEZcMKDJNy-n0UvvIvTIebrqLMmj",
-    "1BbC0pBBNiZJjA5Bx6Ia9kvTivgQGeMc4",
-    "1yvwFqke1NgtdzXta0xuSkwmATVbPwkhO",
-    "1r1_dJUQuzvklC1Cb_8NtmsoiT2jkf8jA",
-]
+# Folder-based fetch instead of a fixed file-ID list — this way newly added
+# files (e.g. next month's data) are picked up automatically without needing
+# a code change every time.
+REFINISHING_FOLDER_ID = "1ZztjmzZ931IRGNwLRGwQbGeMigcsvIDu"
 TARGET = 90.0
 MONTHS_ORDER = ['Jan 26','Feb 26','Mar 26','Apr 26','May 26','Jun 26',
                 'Jul 26','Aug 26','Sep 26','Oct 26','Nov 26','Dec 26']
@@ -53,6 +46,17 @@ def get_drive_service():
         token_uri="https://oauth2.googleapis.com/token")
     return build("drive","v3",credentials=creds)
 
+def list_data_files(service, folder_id):
+    """List every CSV/XLSX file currently in the Drive folder — this is what
+    lets newly added months show up automatically, with no code change."""
+    query = f"'{folder_id}' in parents and trashed = false"
+    results = service.files().list(
+        q=query, fields="files(id, name, modifiedTime)",
+        orderBy="modifiedTime desc", pageSize=200
+    ).execute()
+    files = results.get("files", [])
+    return [f for f in files if f["name"].lower().endswith((".csv", ".xlsx", ".xls"))]
+
 def safe_col(df, cols, default=None):
     for c in cols:
         if c in df.columns: return df[c].copy()
@@ -60,17 +64,27 @@ def safe_col(df, cols, default=None):
 
 def cp(p,f): t=p+f; return round(p/t*100,1) if t>0 else None
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner="Fetching refinishing files from Google Drive...")
 def load_data():
     service = get_drive_service()
+    files = list_data_files(service, REFINISHING_FOLDER_ID)
+    if not files:
+        raise FileNotFoundError(f"No .csv/.xlsx files found in Drive folder {REFINISHING_FOLDER_ID}")
+
     dfs = []
-    for fid in FILE_IDS:
+    loaded_names = []
+    for f in files:
+        fid, fname = f["id"], f["name"]
         buf = io.BytesIO()
         dl = MediaIoBaseDownload(buf, service.files().get_media(fileId=fid))
         done=False
         while not done: _,done=dl.next_chunk()
         buf.seek(0)
-        try: raw=pd.read_csv(buf,on_bad_lines='skip',low_memory=False)
+        try:
+            if fname.lower().endswith((".xlsx", ".xls")):
+                raw = pd.read_excel(buf)
+            else:
+                raw = pd.read_csv(buf, on_bad_lines='skip', low_memory=False)
         except TypeError:
             buf.seek(0); raw=pd.read_csv(buf,error_bad_lines=False,low_memory=False)
         raw.columns=[str(c).strip() for c in raw.columns]
@@ -84,6 +98,7 @@ def load_data():
             't':safe_col(raw,['RF Task','rf_task'],'Unknown').astype(str).str.strip(),
         })
         dfs.append(tmp)
+        loaded_names.append(fname)
     df=pd.concat(dfs,ignore_index=True)
     df=df[df['w'].notna()&(df['w']>0)]
     df['w']=df['w'].astype(int)
@@ -105,9 +120,13 @@ def load_data():
         if w<=26: return 'Jun 26'
         if w<=30: return 'Jul 26'
         if w<=35: return 'Aug 26'
+        if w<=39: return 'Sep 26'
+        if w<=43: return 'Oct 26'
+        if w<=48: return 'Nov 26'
+        if w<=52: return 'Dec 26'
         return 'Other'
     df['m']=df['w'].apply(w2m)
-    return df
+    return df, loaded_names
 
 def build_payload(df):
     weeks=sorted(df['w'].unique().tolist())
@@ -212,8 +231,18 @@ def build_payload(df):
         'target':TARGET,
     }
 
+if st.sidebar.button("🔄 Refresh data from Drive"):
+    load_data.clear()
+
 with st.spinner("Loading Refinishing data…"):
-    df=load_data()
+    try:
+        df, loaded_names = load_data()
+        st.sidebar.caption(f"Loaded {len(loaded_names)} file(s):")
+        for n in loaded_names:
+            st.sidebar.caption(f"• {n}")
+    except Exception as e:
+        st.error(f"Could not fetch refinishing data from Google Drive: {e}")
+        st.stop()
 if df.empty:
     st.error("No data loaded."); st.stop()
 payload=build_payload(df)
