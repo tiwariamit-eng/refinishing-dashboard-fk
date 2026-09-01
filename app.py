@@ -146,11 +146,23 @@ def build_payload(df):
         p,f,c=wpf(g)
         base.append({'w':int(w),'s':s,'v':v,'p':p,'f':f,'c':c,'z':zone_of.get(s,'')})
 
-    # failure reasons per week × site (exclude no issue)
+    # failure reasons per week × site (excludes "No Issue" — used for RF task
+    # heat, top-reason-per-site, and the week-on-week reason trend, where we
+    # want the signal to stay focused on genuine defects)
     fails_df=df[(df['r']=='Fail')&~df['q'].str.lower().str.contains('no issue',na=False)]
     fail_reasons=[]
     for (w,s,q),g in fails_df.groupby(['w','s','q']):
         fail_reasons.append({'w':int(w),'s':s,'reason':str(q),'count':int(len(g)),'v':str(g['v'].mode().iloc[0]) if len(g) else ''})
+
+    # full QA-remark breakdown — INCLUDES "No Issue" as its own bucket, so the
+    # main "Failure reasons" panel shows the true split (e.g. 78% No Issue,
+    # then the remaining % broken down by actual defect type)
+    fails_all_df=df[df['r']=='Fail'].copy()
+    fails_all_df['q_norm']=fails_all_df['q'].apply(
+        lambda x: 'No Issue' if 'no issue' in str(x).lower() else str(x))
+    qa_reasons=[]
+    for (w,s,q),g in fails_all_df.groupby(['w','s','q_norm']):
+        qa_reasons.append({'w':int(w),'s':s,'reason':str(q),'count':int(len(g)),'v':str(g['v'].mode().iloc[0]) if len(g) else ''})
 
     # RF task × site failure heat
     task_heat=[]
@@ -220,7 +232,7 @@ def build_payload(df):
     return {
         'weeks':weeks,'months':months,'sites':sites,'zone_of':zone_of,
         'wk2m':{str(k):v for k,v in wk2m.items()},
-        'base':base,'fail_reasons':fail_reasons,'task_heat':task_heat,
+        'base':base,'fail_reasons':fail_reasons,'qa_reasons':qa_reasons,'task_heat':task_heat,
         'site_findings':site_findings,'zone_summary':zone_summary,
         'meta':{
             'total_samples':ov_p+ov_f,'ov_c':ov_c,'ac':ac_,'fc':fc_,
@@ -752,7 +764,7 @@ function selectSite(s){
 
 function drawReasonTable(sites,weeks,verts){
   const ss=new Set(sites),ws=new Set(weeks);
-  const list=D.fail_reasons.filter(r=>{
+  const list=D.qa_reasons.filter(r=>{
     if(!ss.has(r.s)||!ws.has(r.w))return false;
     if(verts.includes('Apparel')&&!verts.includes('Footwear'))return r.v==='Apparel';
     if(verts.includes('Footwear')&&!verts.includes('Apparel'))return r.v==='Footwear';
@@ -775,11 +787,14 @@ function drawReasonTable(sites,weeks,verts){
 
   let h='<colgroup><col style="width:52%"><col style="width:18%"><col style="width:14%"><col style="width:16%"></colgroup>';
   h+='<thead><tr><th class="lft">Reason</th><th></th><th>Count</th><th>%</th></tr></thead><tbody>';
-  h+=sorted.map(([k,v])=>`<tr>
-    <td class="lft" style="font-size:11px;white-space:normal" title="${k}">${k.length>32?k.slice(0,31)+'…':k}</td>
-    <td><span class="hbar-r" style="width:${Math.max(3,v/mx*40)}px"></span></td>
+  h+=sorted.map(([k,v])=>{
+    const isNoIssue = k==='No Issue';
+    const barColor = isNoIssue ? '#94a0af' : '#d64550';
+    return `<tr${isNoIssue?' style="background:#f7f8fa"':''}>
+    <td class="lft" style="font-size:11px;white-space:normal" title="${k}">${k.length>32?k.slice(0,31)+'…':k}${isNoIssue?' <span class="muted" style="font-size:10px">(no defect found)</span>':''}</td>
+    <td><span class="hbar-r" style="width:${Math.max(3,v/mx*40)}px;background:${barColor}"></span></td>
     <td style="font-size:11px">${n(v)}</td>
-    <td class="muted" style="font-size:11px">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`).join('')
+    <td class="muted" style="font-size:11px">${tot?(v/tot*100).toFixed(1):0}%</td></tr>`;}).join('')
     ||'<tr><td colspan="4" class="muted" style="padding:10px">No failures.</td></tr>';
   document.getElementById('reason-table').innerHTML=h+'</tbody>';
 }
